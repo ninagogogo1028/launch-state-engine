@@ -35,7 +35,7 @@ npm ci
 npm run dev
 ```
 
-打开终端显示的地址，默认是 [http://127.0.0.1:5173](http://127.0.0.1:5173)。
+启动后，在浏览器中打开终端输出的本地地址（`Local:` 一行）。
 
 首次启动没有预置产品。点击「添加我的产品」，填写已知信息；不确定的问题保留「待确认」，LSE 不会把 unknown 当成 false。提交后即可获得第一份上线清单，不需要 CLI 或手写 JSON。
 
@@ -83,7 +83,7 @@ public/flows/launch-state.json
 public/flows/launch-cases/<caseId>.json
 ```
 
-`public/flows/` 已被 Git 忽略，不会进入正常提交。它包含 Product Context、状态、阻塞和 evidence，应按用户数据处理。
+`public/flows/` 已被 Git 忽略，不会进入正常提交；`npm run build` 也会把它从构建产物中排除。它包含 Product Context、状态、阻塞和 evidence，应按用户数据处理。
 
 重要数据请定期使用 Dashboard「导出」备份。删除产品不可在 LSE 内撤销；先导出，再删除。不要把真实 Launch Case 文件复制到公开 issue、日志或 Git 仓库。
 

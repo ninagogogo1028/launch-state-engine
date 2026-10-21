@@ -1,6 +1,7 @@
 import vinext from "vinext";
 import { defineConfig } from "vite";
 import { launchTruth } from "./build/launch-truth-plugin";
+import { excludeLaunchTruthFromBuild } from "./build/exclude-launch-truth";
 
 export default defineConfig(async () => {
   // The dashboard is served through vinext on the Cloudflare Vite plugin
@@ -21,6 +22,8 @@ export default defineConfig(async () => {
       vinext(),
       // Local Launch Truth read/write API for the dashboard (dev server only).
       launchTruth(),
+      // Keep per-user Launch Truth (public/flows/) out of build output.
+      excludeLaunchTruthFromBuild(),
       cloudflare({
         viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
         inspectorPort: false,
