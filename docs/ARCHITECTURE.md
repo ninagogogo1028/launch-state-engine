@@ -31,7 +31,7 @@ Official Sources / Field Experience（分离）                              ▼
                                                                      └──> launch-state CLI（agent）
 ```
 
-Launch Truth 是本地文件：active case 存于 `public/flows/launch-state.json`，每个 Launch Case（`<productId>:wechat-launch`）持久化于 `public/flows/launch-cases/`。Dashboard 与 CLI 通过同一套 `lib/launch-store` 语义读写同一份 active truth。每次读取都从 ProductContext 重新编译 Flow，再叠加该 case 的 patch；没有其他状态来源。
+Launch Truth 是本地文件：active case 存于 `public/flows/launch-state.json`，每个 Launch Case（`<productId>:wechat-launch`）持久化于 `public/flows/launch-cases/`。Dashboard 与 CLI 通过同一套 `lib/launch-store` 语义读写同一份 active truth。路径相对于 LSE 仓库根目录：dev API 使用 Vite 的项目根目录，CLI 依次使用 `--root`、`LSE_ROOT`、CLI 文件所在的 LSE 仓库，并校验目标是 LSE 仓库，不使用当前工作目录。每次读取都从 ProductContext 重新编译 Flow，再叠加该 case 的 patch；没有其他状态来源。
 
 规则只负责适用性判断。节点模板保存工作要求与完成标准；Dashboard 不包含微信规则。`official` 规则可以包含节点，`field_experience` 规则仅追加 field note，不能自行创造 hard requirement。
 

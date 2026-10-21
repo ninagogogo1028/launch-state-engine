@@ -39,30 +39,82 @@ npm run dev
 
 首次启动没有预置产品。点击「添加我的产品」，填写已知信息；不确定的问题保留「待确认」，LSE 不会把 unknown 当成 false。提交后即可获得第一份上线清单，不需要 CLI 或手写 JSON。
 
+不是每个「待确认」都会生成待决问题：只有会影响上线步骤的事实才会。哪些字段会触发问题，见 [Product Context](docs/PRODUCT-CONTEXT.md#哪些-unknown-会生成待确认问题)。
+
 ## Dashboard 使用
 
 - **切换产品**：用顶部产品选择器切换，各产品状态相互隔离。
 - **编辑产品信息**：修改 Product Context 后重新计算 Applicable Flow，已有节点进度按稳定节点 ID 保留。
-- **记录进度**：点开节点查看要求和完成标准，由人选择未开始、进行中、阻塞或已完成。
-- **导出**：下载当前 Flow JSON，适合备份或审查。
-- **导入**：导入 LSE 导出的 JSON 中的 Product Context；导入不会创建跨产品的状态覆盖。
-- **删除**：删除前会列明影响范围并二次确认。有真实进度时建议先导出备份。删除当前产品后会切换到其他产品，没有其他产品时回到空状态。
+- **记录进度**：点开节点查看要求和完成标准，由人选择未开始、进行中、已阻塞或已完成。「进行中」对应数据中的 `waiting`：已开始推进，或在等待外部结果（如审核），没有已知硬阻塞。
+- **导出**：下载当前 Flow JSON，包含产品信息、各步骤状态、阻塞和证据，适合审查或留存记录。
+- **导入**：只读取导出文件中的 Product Context，用来更新当前产品的产品信息；不会恢复步骤状态、阻塞或证据。导入的产品必须与当前产品是同一个 `productId`，不会覆盖其他产品。
+- **删除**：删除前会列明影响范围并二次确认。删除当前产品后会切换到其他产品，没有其他产品时回到空状态。删除前如需保留可恢复的进度，请先按下文「本地数据与备份」复制 case 文件。
 
 ## 与 AI Agent 协作
 
-Dashboard 和 CLI 使用同一份本地数据：
+Dashboard 和 CLI 读写同一份本地数据：LSE 仓库中的 `public/flows/`。CLI 默认使用它自身所在的 LSE 仓库，与当前工作目录无关，所以 Agent 可以在自己的产品仓库里运行它。
+
+### 运行位置
+
+在 LSE 仓库根目录：
 
 ```bash
-npm run launch-state -- status
-npm run launch-state -- next
-npm run launch-state -- parallel
-npm run launch-state -- node <nodeId>
-npm run launch-state -- undetermined
-npm run launch-state -- propose-blocker <nodeId> <summary> <diagnosis> <resolution>
-npm run launch-state -- propose-evidence <nodeId> <type> <label> <value>
+npm run launch-state -- <command>
 ```
 
-运行 `npm run launch-state -- help` 查看完整命令。
+在其他目录（例如你的产品仓库），直接调用 LSE 仓库中的 CLI 文件：
+
+```bash
+node --experimental-strip-types /path/to/launch-state-engine/scripts/launch-state.cli.ts <command>
+```
+
+也可以用 `--root <dir>` 或环境变量 `LSE_ROOT` 指定 LSE 仓库。指定的目录必须是 LSE 仓库根目录（`package.json` 的 `name` 为 `launch-state-engine`），否则 CLI 直接报错退出，不会读取或写入任何数据。`status` 和 `cases` 的输出里有 `lseRoot` 字段，显示实际使用的仓库。
+
+`case-create`、`context-set`、`submit` 的文件参数如果是相对路径，按当前工作目录解析。
+
+以下示例用 `lse` 代表上面任意一种调用方式。
+
+### Agent 首次接入
+
+1. **创建 Launch Case**：复制 [`examples/product-context.json`](examples/product-context.json)，填写 `productId`、`name` 和已知事实，不确定的保留 `"unknown"`。字段和可选值见 [Product Context](docs/PRODUCT-CONTEXT.md)。
+
+   ```bash
+   lse case-create my-product.json
+   ```
+
+   如果用户已在 Dashboard 中添加过产品，跳过这一步，用 `lse cases` 查看，用 `lse case-switch <caseId>` 切换。
+
+2. **读取当前状态和 Next Action**：
+
+   ```bash
+   lse status
+   lse next
+   lse parallel        # 当前可以同时开始的工作
+   lse node <nodeId>   # 节点要求、依赖和完成标准
+   ```
+
+3. **遇到产品决策，交还给用户**：`next` 返回 `kind: "product_decision"`，或 `undetermined` 列出的问题，都标有 `owner: "user"` 和 `policy: "stop_and_ask"`。Agent 必须询问用户，不能替用户决定，也不能把 unknown 改成 false。用户回答后，更新事实并重新读取：
+
+   ```bash
+   lse undetermined
+   lse context-set my-product.json   # 只能更新当前 case 的同一个 productId
+   lse next
+   ```
+
+4. **提交进度和证据**：
+
+   ```bash
+   lse propose-status <nodeId> waiting "已开始迁移核心功能"
+   lse propose-evidence <nodeId> <type> <label> <value>
+   lse propose-blocker <nodeId> <summary> <diagnosis> <resolution>
+   lse submit payload.json   # 一次提交多个节点，格式见 help
+   ```
+
+   `propose-status` 的第三个参数 reason 可选，会作为一条 `agent_submitted` evidence 记录在同一节点上。
+
+5. **交给用户确认完成**：Agent 不能写入 `completed`。节点满足完成标准后，请用户在 Dashboard 中核对 evidence 并确认。Dashboard 在窗口重新获得焦点时重新读取数据，不会实时推送。
+
+运行 `lse help` 查看完整命令。
 
 权限边界：
 
@@ -85,7 +137,13 @@ public/flows/launch-cases/<caseId>.json
 
 `public/flows/` 已被 Git 忽略，不会进入正常提交；`npm run build` 也会把它从构建产物中排除。它包含 Product Context、状态、阻塞和 evidence，应按用户数据处理。
 
-重要数据请定期使用 Dashboard「导出」备份。删除产品不可在 LSE 内撤销；先导出，再删除。不要把真实 Launch Case 文件复制到公开 issue、日志或 Git 仓库。
+备份与恢复：
+
+- **完整备份**：复制 `public/flows/launch-cases/<caseId>.json`。这个文件包含该产品的 Product Context、步骤状态、阻塞和证据。
+- **完整恢复**：把备份文件放回 `public/flows/launch-cases/`，然后在 Dashboard 产品选择器中切换到该产品，或运行 `launch-state case-switch <caseId>`。
+- **Dashboard「导出」**：适合审查或留存记录，但不能用于恢复进度。「导入」只恢复 Product Context。
+
+删除产品不可在 LSE 内撤销；需要保留进度时，先复制 case 文件，再删除。不要把真实 Launch Case 文件复制到公开 issue、日志或 Git 仓库。
 
 ## 规则覆盖范围
 
@@ -113,7 +171,7 @@ npm run build
 app/                 Dashboard
 build/               本地 Launch Truth API 插件与构建入口
 components/ui/       UI primitives
-docs/                架构、状态模型、规则和研究文档
+docs/                架构、状态模型、Product Context、规则和研究文档
 examples/            Product Context 模板
 lib/flow-engine/     Rule Registry、节点目录和 Flow compiler
 lib/launch-store*    本地状态读写与隔离

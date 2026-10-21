@@ -1,5 +1,6 @@
 #!/usr/bin/env -S node --experimental-strip-types
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   applyStorePatch,
   buildFlowFromStore,
@@ -26,6 +27,7 @@ import {
   readJson,
   requireActiveStore,
   saveStore,
+  storePath,
   switchLaunchCase,
 } from "../lib/launch-store-file.ts";
 
@@ -36,20 +38,35 @@ const helpText = `LSE · Launch State Engine CLI
 Launch Case 是一等对象：一个 case = 一个 Product 的一个 launch target，
 id 形如 <productId>:wechat-launch。每个 case 独立持有 ProductContext、agent patch
 与 humanStatuses；切换 case 后互不可见。
-active case：public/flows/launch-state.json（CLI 与 Dashboard 共用）
-case 存储：public/flows/launch-cases/<caseId>.json
+active case：<LSE root>/public/flows/launch-state.json（CLI 与 Dashboard 共用）
+case 存储：<LSE root>/public/flows/launch-cases/<caseId>.json
 首次运行时没有任何 case：先用 case-create 创建（或在 Dashboard 中「添加我的产品」）。
-Dashboard（npm run dev）读写同一份 active truth：人工状态（含 completed）记录在
+Dashboard（在 LSE root 中 npm run dev）读写同一份 active truth：人工状态（含 completed）记录在
 humanStatuses 通道；agent 的一切提交永远是 proposal。
 
+数据位置（LSE root）：
+  CLI 读写的是某个 LSE 仓库中的 public/flows/，与当前工作目录无关。按以下顺序确定：
+    1. --root <dir>    2. 环境变量 LSE_ROOT    3. 本 CLI 所在的 LSE 仓库（默认）
+  该目录必须是 LSE 仓库根目录（package.json 的 name 为 launch-state-engine），否则直接报错退出，
+  不读取也不写入任何数据。status / cases 输出中的 lseRoot 是实际使用的仓库。
+  case-create / context-set / submit 的相对文件路径按当前工作目录解析。
+
 用法：
-  npm run launch-state -- <command> [args]
-  （或 npx --no-install launch-state <command> [args]）
+  在 LSE 仓库根目录：npm run launch-state -- <command> [args]
+  在其他目录（例如你的产品仓库）：
+    node --experimental-strip-types /path/to/launch-state-engine/scripts/launch-state.cli.ts <command> [args]
 
 开始你自己的 Launch Case：
   1. cp examples/product-context.json my-product.json   # 改 productId / name 与产品事实；不确定就保留 "unknown"
+                                                         # 字段与可选值：docs/PRODUCT-CONTEXT.md
   2. npm run launch-state -- case-create my-product.json
   3. npm run dev                                         # Dashboard 显示的就是这个 active case
+
+节点状态（Agent 只能提议前三种）：
+  not_started  未开始
+  waiting      Dashboard 显示为「进行中」：已开始推进，或在等待外部结果（如审核）；没有已知硬阻塞
+  blocked      已阻塞：必须附 blocker（用 propose-blocker）
+  completed    已完成：只能由 Human 在 Dashboard 中确认
 
 Launch Case 命令：
   cases [--pretty]            列出全部 Launch Cases（标记 active）
@@ -82,6 +99,7 @@ Launch Case 命令：
                                 · evidence 会追加，并一律标 verifiedBy="agent_submitted"。
   propose-status <nodeId> <not_started|waiting|blocked> [reason]
                               简版：直接 propose 一个节点状态（不可 completed）。
+                              reason 可选，作为一条 evidence（type=status_reason，agent_submitted）追加。
   propose-blocker <nodeId> <summary> <diagnosis> <resolution>
                               简版：直接报告一个 blocker。
   propose-evidence <nodeId> <type> <label> <value>
@@ -116,8 +134,34 @@ Launch Case 命令：
 
 const FIXTURE_CASE_NOTE = "This case was created from a fictional example fixture, not from your product's facts.";
 
-function rootDir() {
-  return process.cwd();
+// The LSE checkout this CLI file belongs to. It is the default data root, so
+// an agent calling the CLI from its own product repository still reads and
+// writes the same Launch Truth as that checkout's dashboard.
+const CLI_LSE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const LSE_PACKAGE_NAME = "launch-state-engine";
+
+type RootSource = "--root" | "LSE_ROOT" | "cli-location";
+let resolvedRoot: { root: string; source: RootSource } | null = null;
+
+// --root, then LSE_ROOT, then the CLI's own checkout. The target must be an
+// LSE checkout; anything else fails before any read or write, so Launch Truth
+// is never created inside another project.
+async function resolveRoot(flags: ParsedArgs["flags"]): Promise<{ root: string; source: RootSource }> {
+  if (flags.root === true || flags.root === "") fail("--root requires a directory: --root <dir>");
+  const [raw, source]: [string, RootSource] = typeof flags.root === "string" ? [flags.root, "--root"]
+    : process.env.LSE_ROOT ? [process.env.LSE_ROOT, "LSE_ROOT"]
+    : [CLI_LSE_ROOT, "cli-location"];
+  const root = path.resolve(raw);
+  let name: unknown;
+  try {
+    name = (await readJson<{ name?: unknown }>(path.join(root, "package.json"))).name;
+  } catch {
+    name = undefined;
+  }
+  if (name !== LSE_PACKAGE_NAME) {
+    fail(`LSE root ${root} (from ${source}) is not a Launch State Engine checkout: expected package.json with "name": "${LSE_PACKAGE_NAME}". Nothing was read or written. Pass the LSE repository root via --root <dir> or LSE_ROOT.`);
+  }
+  return { root, source };
 }
 
 function errorMessage(err: unknown) {
@@ -138,7 +182,7 @@ type ParsedArgs = { cmd: string; positional: string[]; flags: Record<string, str
 
 // Flags whose value may be written as a separate token (`--fixture productivity`),
 // matching the syntax documented in the help text. All other flags are boolean.
-const VALUE_FLAGS = new Set(["fixture", "from-fixture"]);
+const VALUE_FLAGS = new Set(["fixture", "from-fixture", "root"]);
 
 function parseArgs(argv: string[]): ParsedArgs {
   const positional: string[] = [];
@@ -249,6 +293,7 @@ function describeNext(flow: Flow) {
 function summarizeFlow(store: LaunchStateStore, flow: Flow) {
   const nodes = flowNodes(flow);
   return {
+    lseRoot: resolvedRoot?.root,
     storeUpdatedAt: store.updatedAt,
     productContext: { id: store.contextId, name: store.productContext.name, unknownFields: unknownFields(store.productContext) },
     ...caseInfo(store),
@@ -345,7 +390,9 @@ async function readContextArg(root: string, cmd: string, flags: ParsedArgs["flag
   const file = positional[0];
   if (!file) fail(`${cmd} requires <jsonFile> (a ProductContext) or --from-fixture <name>`);
   try {
-    return await readJson<ProductContext>(path.isAbsolute(file) ? file : path.join(root, file));
+    // Input files belong to the caller (e.g. an agent in its product repo):
+    // relative paths resolve against the working directory, not the LSE root.
+    return await readJson<ProductContext>(path.resolve(file));
   } catch (err) {
     fail(`${cmd}: cannot read ProductContext file ${file} (${errorMessage(err)})`);
   }
@@ -353,11 +400,12 @@ async function readContextArg(root: string, cmd: string, flags: ParsedArgs["flag
 
 async function run() {
   const { cmd, positional, flags } = parseArgs(process.argv.slice(2));
-  const root = rootDir();
   if (cmd === "help" || flags.h || flags.help) {
     process.stdout.write(helpText + "\n");
     return;
   }
+  resolvedRoot = await resolveRoot(flags);
+  const root = resolvedRoot.root;
   const pretty = Boolean(flags.pretty);
 
   if (cmd === "context") {
@@ -433,7 +481,7 @@ async function run() {
     if (!file) fail("submit requires <payload.json>");
     let payload: unknown;
     try {
-      payload = await readJson(path.isAbsolute(file) ? file : path.join(root, file));
+      payload = await readJson(path.resolve(file));
     } catch (err) {
       fail(`submit: cannot read payload ${file} (${errorMessage(err)})`);
     }
@@ -443,11 +491,25 @@ async function run() {
   }
 
   if (cmd === "propose-status") {
-    const [nodeId, status] = positional;
-    if (!nodeId || !status) fail("propose-status requires <nodeId> <not_started|waiting|blocked>");
+    const [nodeId, status, reason] = positional;
+    if (!nodeId || !status) fail("propose-status requires <nodeId> <not_started|waiting|blocked> [reason]");
     if (status === "completed") fail("propose-status: completed is NEVER allowed via this CLI. Completion is confirmed by the human in the dashboard.");
-    const result = await submitProposal(root, { nodePatches: { [nodeId]: { status } } });
-    render(pretty, { accepted: true, nodeId, proposedStatus: status, note: "Status is a proposal/claim only; never implies completion.", newSummary: summarizeFlow(result.store, result.flow) });
+    if (!["not_started", "waiting", "blocked"].includes(status)) fail(`propose-status: invalid status "${status}". Use not_started | waiting | blocked.`);
+    // The state model has no per-status reason field; a reason travels as
+    // agent_submitted evidence on the same node, like every agent statement.
+    const patch = reason
+      ? { status, evidence: [{ type: "status_reason", label: `Reason for proposed status: ${status}`, value: reason }] }
+      : { status };
+    const result = await submitProposal(root, { nodePatches: { [nodeId]: patch } });
+    const nodeNow = flowNodes(result.flow).find(n => n.id === nodeId);
+    render(pretty, {
+      accepted: true,
+      nodeId,
+      proposedStatus: status,
+      ...(reason ? { reasonRecordedAs: nodeNow?.evidence.at(-1) } : {}),
+      note: "Status is a proposal/claim only; never implies completion.",
+      newSummary: summarizeFlow(result.store, result.flow),
+    });
     return;
   }
 
@@ -517,7 +579,7 @@ async function run() {
   }
 
   if (cmd === "cases") {
-    render(pretty, await listLaunchCases(root));
+    render(pretty, { lseRoot: root, ...(await listLaunchCases(root)) });
     return;
   }
 
@@ -584,7 +646,11 @@ async function run() {
 }
 
 run().catch(err => {
-  if (err instanceof NoActiveCaseError) fail(err.message);
+  // Say where we looked, so a missing case is never mistaken for lost state.
+  if (err instanceof NoActiveCaseError) {
+    const where = resolvedRoot ? ` Looked for ${storePath(resolvedRoot.root)} (LSE root from ${resolvedRoot.source}).` : "";
+    fail(err.message + where);
+  }
   console.error("Unhandled CLI error:", err instanceof Error ? err.stack : err);
   process.exit(1);
 });

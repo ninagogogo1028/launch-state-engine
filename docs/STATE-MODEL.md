@@ -56,7 +56,7 @@ type FlowNode = {
 ## 状态定义
 
 - `not_started`：适用，但尚未开始。
-- `waiting`：正在推进或等待外部结果；当前没有已知硬阻塞。
+- `waiting`：正在推进或等待外部结果；当前没有已知硬阻塞。Dashboard 显示为「进行中」。
 - `blocked`：存在明确 blocker，必须附 diagnosis 和 resolution。
 - `completed`：由 Human 确认 exit criteria 已满足。这是人工确认，不是机器验证；高风险节点应先核对 evidence。
 

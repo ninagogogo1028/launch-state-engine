@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -13,8 +14,12 @@ const WRITABLE_NODE = "migration-core-path";
 
 const EXAMPLE_CASE = "example-productivity-app:wechat-launch";
 
+// An isolated LSE root: the CLI only accepts a directory whose package.json
+// names launch-state-engine, so tests never touch the real checkout's data.
 async function makeEmptyRoot() {
-  return mkdtemp(path.join(tmpdir(), "lse-cli-test-"));
+  const root = await mkdtemp(path.join(tmpdir(), "lse-cli-test-"));
+  await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "launch-state-engine" }));
+  return root;
 }
 
 // A checkout with one active Launch Case created from the fictional
@@ -27,7 +32,15 @@ async function makeRoot() {
 }
 
 function runCli(args: string[], root: string) {
-  return spawnSync(process.execPath, ["--experimental-strip-types", CLI, ...args], { cwd: root, encoding: "utf8" });
+  return spawnSync(process.execPath, ["--experimental-strip-types", CLI, ...args], { cwd: root, encoding: "utf8", env: { ...process.env, LSE_ROOT: root } });
+}
+
+// Agent-in-product-repo shape: cwd is an unrelated directory and the LSE root
+// is chosen only by --root / LSE_ROOT (never inherited from the test runner).
+function runCliFrom(cwd: string, args: string[], env: Record<string, string> = {}) {
+  const base = { ...process.env };
+  delete base.LSE_ROOT;
+  return spawnSync(process.execPath, ["--experimental-strip-types", CLI, ...args], { cwd, encoding: "utf8", env: { ...base, ...env } });
 }
 
 async function readStore(root: string) {
@@ -390,6 +403,97 @@ test("status reports the rule coverage boundary and parallel reports dependency-
     assert.equal(parallelWhileWaiting.guidance.waiting.some((w: any) => w.nodeId === "filing-complete"), true);
     assert.equal(parallelWhileWaiting.guidance.startableNow.some((n: any) => n.nodeId === "migration-core-path"), true);
     assert.equal(parallelWhileWaiting.guidance.canRunInParallel, true);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("an agent in its own product repo reads and writes the LSE root's Launch Truth, never its cwd", async () => {
+  const lse = await makeEmptyRoot();
+  const product = await mkdtemp(path.join(tmpdir(), "lse-product-repo-"));
+  try {
+    await writeFile(path.join(product, "package.json"), JSON.stringify({ name: "my-mini-program" }));
+    const template = JSON.parse(await readFile(fileURLToPath(new URL("../examples/product-context.json", import.meta.url)), "utf8"));
+    await writeFile(path.join(product, "facts.json"), JSON.stringify({ ...template, productId: "my-app", name: "My App" }));
+
+    // Relative input paths resolve against the agent's cwd (the product repo).
+    const created = runCliFrom(product, ["case-create", "facts.json", "--root", lse]);
+    assert.equal(created.status, 0, created.stderr);
+    const status = JSON.parse(runCliFrom(product, ["status", "--root", lse]).stdout);
+    assert.equal(status.lseRoot, lse);
+    assert.equal(status.productContext.id, "my-app:wechat-launch");
+
+    // LSE_ROOT selects the same data without a flag.
+    const viaEnv = runCliFrom(product, ["propose-status", WRITABLE_NODE, "waiting", "core path migration started"], { LSE_ROOT: lse });
+    assert.equal(viaEnv.status, 0, viaEnv.stderr);
+    const evidence = runCliFrom(product, ["propose-evidence", WRITABLE_NODE, "test_run", "Core path", "12/12 pass"], { LSE_ROOT: lse });
+    assert.equal(evidence.status, 0, evidence.stderr);
+
+    const store = await readStore(lse);
+    assert.equal(store.patch.nodePatches[WRITABLE_NODE].status, "waiting");
+    assert.deepEqual(store.patch.nodePatches[WRITABLE_NODE].evidence.map((e: any) => [e.type, e.value, e.verifiedBy]), [
+      ["status_reason", "core path migration started", "agent_submitted"],
+      ["test_run", "12/12 pass", "agent_submitted"],
+    ]);
+    assert.equal(store.patch.humanStatuses, undefined);
+    // Nothing was written into the product repository.
+    assert.equal(existsSync(path.join(product, "public")), false);
+  } finally {
+    await rm(lse, { recursive: true, force: true });
+    await rm(product, { recursive: true, force: true });
+  }
+});
+
+test("a root that is not an LSE checkout fails before any read or write", async () => {
+  const product = await mkdtemp(path.join(tmpdir(), "lse-product-repo-"));
+  try {
+    await writeFile(path.join(product, "package.json"), JSON.stringify({ name: "my-mini-program" }));
+    for (const [args, env] of [
+      [["case-create", "--from-fixture", "minimal", "--root", product], {}],
+      [["status"], { LSE_ROOT: product }],
+      [["cases", "--root", path.join(product, "missing")], {}],
+    ] as Array<[string[], Record<string, string>]>) {
+      const result = runCliFrom(product, args, env);
+      assert.equal(result.status, 2, args.join(" "));
+      assert.match(result.stderr, /is not a Launch State Engine checkout/);
+      assert.doesNotMatch(result.stderr, /No Launch Case yet/);
+    }
+    assert.equal(runCliFrom(product, ["status", "--root"]).status, 2);
+    assert.equal(existsSync(path.join(product, "public")), false);
+  } finally {
+    await rm(product, { recursive: true, force: true });
+  }
+});
+
+test("no active case reports the exact store path it looked for", async () => {
+  const lse = await makeEmptyRoot();
+  try {
+    const result = runCliFrom(tmpdir(), ["next", "--root", lse]);
+    assert.equal(result.status, 2);
+    assert.match(result.stderr, /No Launch Case yet/);
+    assert.ok(result.stderr.includes(path.join(lse, "public", "flows", "launch-state.json")), result.stderr);
+    assert.match(result.stderr, /from --root/);
+  } finally {
+    await rm(lse, { recursive: true, force: true });
+  }
+});
+
+test("propose-status stores its reason as agent evidence and rejects illegal statuses", async () => {
+  const root = await makeRoot();
+  try {
+    const noReason = runCli(["propose-status", WRITABLE_NODE, "blocked"], root);
+    assert.equal(noReason.status, 0, noReason.stderr);
+    assert.equal((await readStore(root)).patch.nodePatches[WRITABLE_NODE].evidence, undefined);
+
+    const withReason = JSON.parse(runCli(["propose-status", WRITABLE_NODE, "waiting", "waiting for review"], root).stdout);
+    assert.equal(withReason.reasonRecordedAs.type, "status_reason");
+    assert.equal(withReason.reasonRecordedAs.verifiedBy, "agent_submitted");
+
+    for (const bad of ["completed", "done"]) {
+      const refused = runCli(["propose-status", WRITABLE_NODE, bad], root);
+      assert.equal(refused.status, 2, bad);
+    }
+    assert.equal((await readStore(root)).patch.nodePatches[WRITABLE_NODE].status, "waiting");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
