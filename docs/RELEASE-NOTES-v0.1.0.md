@@ -1,30 +1,39 @@
 # Launch State Engine v0.1.0
 
-First public release of Launch State Engine: a local-first Launch Dashboard + State Engine for taking an existing product toward a WeChat Mini Program production launch.
+First public release of Launch State Engine (LSE): a local-first launch checklist and shared launch state for taking an existing product to a WeChat Mini Program release. Humans use the Dashboard; coding agents use the CLI. Both read and write the same local data, and only the human can mark a step completed.
 
 ## Highlights
 
-- Describe a product with tri-state facts: yes, no, or unknown.
-- Compile a small, explainable Applicable Flow from a separate Rule Registry.
-- Track launch stages, dependencies, next action, blockers, evidence and exit criteria.
-- Distinguish official requirements, conditional requirements, product decisions and field experience.
-- Create, switch, edit, import, export and delete isolated local Launch Cases.
-- Share one local Launch Truth between the human Dashboard and a model-agnostic CLI. The CLI can run from any directory, including the product's own repository, and always uses the LSE repository's data (or one chosen with `--root` / `LSE_ROOT`).
-- Preserve human authority over completion: Agent claims and evidence never automatically become verified completion.
-- Show the Registry coverage boundary directly in the Dashboard and Flow data.
+- Describe a product with tri-state facts: yes, no, or unknown. Unknown is never treated as no.
+- Generate only the launch steps that apply, from a separate Rule Registry, with the reason each conditional step is included, excluded or still waiting for your answer.
+- For every step: what to do, where, exit criteria, dependencies, official WeChat sources, and field experience kept separate from official requirements.
+- Next action, current blocker and work that can start in parallel, derived from recorded dependencies.
+- A model-agnostic CLI for coding agents. It can run from any directory, including your product repository, and always uses the LSE repository's data (or one chosen with `--root` / `LSE_ROOT`).
+- Agents can propose progress, blockers and evidence. Agent evidence is labelled as unverified, and agents can never mark a step completed.
+- Create, switch, edit and delete isolated local products.
+- The rule coverage boundary is shown in the Dashboard and in the flow data.
 
 ## Important limitations
 
 - LSE does not write or migrate Mini Program code, deploy services, operate the WeChat admin console or submit a review.
-- The Rule Registry is intentionally partial. Specialist requirements for many product categories and transaction models are not fully covered.
+- LSE is not an official WeChat tool and not a compliance audit. Rule coverage is partial: specialist requirements for ordinary Mini Program payment, physical orders and fulfilment, advertising, commission, donations, and for game, commerce, education and content products are not fully covered.
 - A 100% checklist does not prove that every official requirement has been satisfied or that a Mini Program will pass review.
-- Local data is stored under `public/flows/` in the LSE repository; do not commit it. To back up a product with its progress, copy its file under `public/flows/launch-cases/`. Dashboard export is a readable record; Dashboard import restores Product Context only, not step statuses, blockers or evidence.
-- V0.1 is local-first and single-user. It has no accounts, cloud sync, collaboration, Agent orchestration or authenticated local API.
+- Data is stored under `public/flows/` in the LSE repository. It is ignored by Git and excluded from builds.
+- Backups: to keep a product with its progress, copy its file under `public/flows/launch-cases/`. Dashboard export is a readable record; Dashboard import restores product facts only, not step statuses, blockers or evidence.
+- Single-user and local only: no accounts, cloud sync, collaboration, live push between CLI and Dashboard, Agent orchestration or authenticated local API.
+- Verified on macOS with Node.js 25. Windows, Linux and Node.js 22 have not been tested yet.
 
-## Requirements
+## Getting started
 
-- Node.js 22.13+
-- `npm ci`
-- `npm run dev`
+Requires Node.js 22.13 or later.
 
-See the [README](../README.md) for first-use instructions and the [Coverage Matrix](COVERAGE-MATRIX.md) for verified, partial and unverified areas.
+```bash
+git clone https://github.com/ninagogogo1028/launch-state-engine.git
+cd launch-state-engine
+npm ci
+npm run dev
+```
+
+Open the local URL printed in the terminal and click 「添加我的产品」.
+
+See the [README](https://github.com/ninagogogo1028/launch-state-engine/blob/v0.1.0/README.md) for Dashboard use and agent setup (in Chinese), and the [Coverage Matrix](https://github.com/ninagogogo1028/launch-state-engine/blob/v0.1.0/docs/COVERAGE-MATRIX.md) for verified, partial and unverified areas.

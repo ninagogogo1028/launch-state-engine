@@ -1,35 +1,36 @@
 # Launch State Engine
 
-Launch State Engine（LSE）是一个本地运行、model-agnostic 的微信小程序上线 Dashboard + State Engine。
+把已有产品上线成微信小程序时，要做的事情分散在很多地方：注册账号、选择类目、备案、隐私保护指引、服务器域名、真机测试、提交审核……哪些步骤适用，取决于产品用了哪些能力；有些步骤只能由你本人完成（实名认证、扫码、后台操作）；如果用 Coding Agent 开发，它往往不知道整体进行到哪一步，也可能把"代码写完了"当成"这一步完成了"。
 
-你描述产品事实，LSE 根据 Rule Registry 生成这个产品当前适用的上线清单，并持续显示进度、下一步、阻塞、依赖、完成标准、官方依据和证据。人类使用 Dashboard；任意开发 Agent 可以通过 CLI 读写同一份本地 Launch Truth。
+Launch State Engine（LSE）是一个在本机运行的上线状态工具。你描述产品事实，LSE 生成这个产品适用的上线清单，标出每一步的完成标准、依赖关系和官方依据，并持续告诉你：现在到哪了、下一步做什么、卡在哪里、哪些事可以同时做。
 
-> LSE 不是自动发布工具，也不是完整的微信官方规则数据库。它不写代码、不部署、不操作微信公众平台，也不保证小程序通过审核。清单进度 100% 不代表所有微信官方要求都已满足。
+你在 Dashboard 里查看和确认进度；你的 Coding Agent 通过命令行读取同一份状态、提交进度和证据。步骤是否完成，始终由你确认。
 
-## 适合谁
+> LSE 不写代码、不部署、不操作微信公众平台，也不提交审核。它不是微信官方工具，也不是完整的合规检查。清单进度 100% 不代表所有微信官方要求都已满足，也不保证能通过审核。
 
-- 第一次把已有 Web、App 或本地工具迁移为微信小程序的开发者；
-- 希望把分散的上线要求、状态、阻塞和证据放在一个地方的小团队；
-- 使用 Coding Agent 开发，但希望把产品决策和最终完成确认保留给人的用户。
+## 界面预览
 
-## V0.1 能做什么
+![LSE Dashboard：上线进度、下一步、当前阻塞和可同时进行的工作](docs/images/dashboard.png)
 
-- 用三态 Product Context（是 / 否 / 待确认）描述产品事实；
-- 生成可解释的 Applicable Flow，并区分适用、不适用和待确认路径；
-- 展示 Next Action、当前主阻塞、可并行工作和完整 Launch Checklist；
-- 查看节点依赖、完成标准、官方来源、经验建议和 evidence；
-- 记录人工状态及 Agent 提交的进度、阻塞和 evidence；
-- 创建、切换、编辑、导入、导出和删除多个本地产品；
-- 明确显示当前 Rule Registry 的覆盖边界。
+![节点详情：完成标准、依赖、官方依据，以及 Agent 提交的未经验证证据](docs/images/node-detail.png)
 
-所有状态默认保存在本机，不需要账号、云同步或模型 API。
+截图来自隔离测试环境中真实运行的 LSE。产品「Pocket Notes（示例）」和其中的进度都是虚构数据。
 
-## 安装与启动
+## 核心能力
 
-要求：Node.js 22.13 或更高版本。
+- **按产品生成清单**：用「是 / 否 / 待确认」描述产品事实。LSE 根据 Rule Registry 只生成适用的步骤，并说明哪些步骤因为什么不适用、哪些要等你回答问题后才能确定。待确认不会被当成「否」。
+- **每一步都说清楚**：要做什么、在哪里做、怎么才算完成、为什么需要、依赖哪些步骤、对应的微信官方文档，以及区分官方要求与经验建议。
+- **下一步与并行工作**：根据步骤依赖给出 Next Action、当前主阻塞，以及现在可以同时推进的事。
+- **人和 Agent 共享状态**：Dashboard 和命令行读写同一份本地数据。Agent 可以提交进度、阻塞和证据，但不能把步骤标记为完成。
+- **多个产品互不干扰**：在本机创建、切换、编辑、删除多个产品，各自的状态相互隔离。
+- **覆盖边界可见**：Dashboard 和数据中都会显示当前规则覆盖到哪里、没有覆盖哪里。
+
+## 快速开始：自己使用 Dashboard
+
+需要 Node.js 22.13 或更高版本。
 
 ```bash
-git clone <your-repository-url>
+git clone https://github.com/ninagogogo1028/launch-state-engine.git
 cd launch-state-engine
 npm ci
 npm run dev
@@ -37,152 +38,209 @@ npm run dev
 
 启动后，在浏览器中打开终端输出的本地地址（`Local:` 一行）。
 
-首次启动没有预置产品。点击「添加我的产品」，填写已知信息；不确定的问题保留「待确认」，LSE 不会把 unknown 当成 false。提交后即可获得第一份上线清单，不需要 CLI 或手写 JSON。
+1. 首次启动没有任何产品。点击「添加我的产品」，填写已知的信息。不确定的保留「待确认」。
+2. 提交后得到第一份上线清单。页面顶部是整体进度、下一步和当前阻塞。
+3. 点开任意步骤，查看要求和完成标准。满足完成标准后，在「当前状态」里改为「已完成」。
+4. 如果页面上出现「需要你回答的问题」，回答后清单会重新计算。已有的进度会保留。
 
-不是每个「待确认」都会生成待决问题：只有会影响上线步骤的事实才会。哪些字段会触发问题，见 [Product Context](docs/PRODUCT-CONTEXT.md#哪些-unknown-会生成待确认问题)。
+不是每个「待确认」都会生成问题，只有会影响上线步骤的事实才会。具体见 [Product Context](docs/PRODUCT-CONTEXT.md#哪些-unknown-会生成待确认问题)。
 
-## Dashboard 使用
+Dashboard 的其他操作：
 
-- **切换产品**：用顶部产品选择器切换，各产品状态相互隔离。
-- **编辑产品信息**：修改 Product Context 后重新计算 Applicable Flow，已有节点进度按稳定节点 ID 保留。
-- **记录进度**：点开节点查看要求和完成标准，由人选择未开始、进行中、已阻塞或已完成。「进行中」对应数据中的 `waiting`：已开始推进，或在等待外部结果（如审核），没有已知硬阻塞。
-- **导出**：下载当前 Flow JSON，包含产品信息、各步骤状态、阻塞和证据，适合审查或留存记录。
-- **导入**：只读取导出文件中的 Product Context，用来更新当前产品的产品信息；不会恢复步骤状态、阻塞或证据。导入的产品必须与当前产品是同一个 `productId`，不会覆盖其他产品。
-- **删除**：删除前会列明影响范围并二次确认。删除当前产品后会切换到其他产品，没有其他产品时回到空状态。删除前如需保留可恢复的进度，请先按下文「本地数据与备份」复制 case 文件。
+- **切换 / 添加产品**：顶部的产品选择器和「添加产品」。
+- **编辑产品信息**：修改事实后清单重新计算，已有步骤的进度按步骤 ID 保留。
+- **导出**：下载当前清单的 JSON，包含产品信息、各步骤状态、阻塞和证据。适合审查或留存记录。
+- **导入**：只读取导出文件中的产品信息，用来更新当前产品；不会恢复步骤状态、阻塞或证据。导入的必须是同一个产品（相同 `productId`）。
+- **清空步骤状态**（↺ 按钮）：清空当前产品的全部步骤状态和证据，保留产品信息。会先弹出确认。
+- **删除产品**：删除前会列出影响范围并二次确认。删除后无法在 LSE 中恢复，需要保留进度请先按下文备份。
 
-## 与 AI Agent 协作
+状态的含义：「未开始」「进行中」（数据中为 `waiting`：已开始推进，或在等待外部结果，例如审核）「已阻塞」「已完成」。
 
-Dashboard 和 CLI 读写同一份本地数据：LSE 仓库中的 `public/flows/`。CLI 默认使用它自身所在的 LSE 仓库，与当前工作目录无关，所以 Agent 可以在自己的产品仓库里运行它。
+## 让 AI Agent 帮我安装和使用 LSE
 
-### 运行位置
+LSE 不依赖特定的 Agent 或模型。任何能在终端运行命令的 Coding Agent，都可以通过 LSE 的命令行接口工作。
 
-在 LSE 仓库根目录：
+### 可以直接复制给 Agent 的指令
 
-```bash
-npm run launch-state -- <command>
+在你的产品仓库中打开 Claude Code、Codex 或其他 Coding Agent，把下面这段话发给它：
+
+```text
+请帮我用 Launch State Engine（LSE）管理这个产品的微信小程序上线进度。
+
+1. 把 https://github.com/ninagogogo1028/launch-state-engine 克隆到当前项目之外的独立目录
+   （例如 ~/tools/launch-state-engine），在那个目录运行 npm ci。需要 Node.js 22.13 或更高版本。
+2. 阅读 LSE 的 README.md 和 docs/PRODUCT-CONTEXT.md，然后运行：
+   node --experimental-strip-types <LSE 目录>/scripts/launch-state.cli.ts help
+3. 运行 cases 查看是否已有我的产品。如果没有，根据这个项目的代码整理一份 Product Context
+   草稿，先交给我确认。我没有明确回答的事实保留 "unknown"。确认后用 case-create 创建。
+4. 运行 status 和 next，告诉我当前进度、下一步和阻塞，并告诉我怎样打开 Dashboard
+   （在 LSE 目录运行 npm run dev）。
+5. 之后在开发过程中，用 propose-status、propose-evidence、propose-blocker 记录进度和证据。
+
+规则：
+- 不要把任何步骤标记为完成。完成由我在 Dashboard 中确认。
+- 遇到 owner 为 user 或 policy 为 stop_and_ask 的问题，停下来问我。不要替我决定，也不要把 unknown 改成 false。
+- 没有我的明确要求，不要运行 reset，也不要用 context-set 修改我已经回答过的事实。
+- 不要把 LSE 的目录或数据放进这个项目。
 ```
 
-在其他目录（例如你的产品仓库），直接调用 LSE 仓库中的 CLI 文件：
+关于这段指令，请注意：
+
+- **已验证**：CLI 可以在任意目录调用，数据始终写入 LSE 仓库，这部分有自动化测试覆盖。在此前的一次接入测试中，一个全新的 Claude 会话只按照早期版本的 README，在 LSE 仓库中完成了安装、创建 Launch Case 和提交进度，并在 Dashboard 中看到了同一份状态。那次测试发现的跨目录问题已经修复。
+- **未验证**：这段指令本身还没有在 Claude Code、Codex 或其他 Agent 中逐一实测。Agent 能否自行完成克隆和安装、能否在后台持续运行 Dashboard，取决于具体 Agent 的能力和权限设置。Dashboard 建议由你自己在终端运行 `npm run dev`。
+
+### 跨项目使用：数据存在哪里
+
+LSE 的数据始终放在 LSE 仓库的 `public/flows/` 中，与 Agent 当前在哪个目录工作无关。CLI 按以下顺序确定使用哪个 LSE 仓库：
+
+1. 命令行参数 `--root <LSE 目录>`
+2. 环境变量 `LSE_ROOT`
+3. CLI 文件所在的 LSE 仓库（默认）
+
+所以在产品仓库中，直接用完整路径调用 LSE 仓库里的 CLI 即可：
 
 ```bash
-node --experimental-strip-types /path/to/launch-state-engine/scripts/launch-state.cli.ts <command>
+node --experimental-strip-types ~/tools/launch-state-engine/scripts/launch-state.cli.ts status
 ```
 
-也可以用 `--root <dir>` 或环境变量 `LSE_ROOT` 指定 LSE 仓库。指定的目录必须是 LSE 仓库根目录（`package.json` 的 `name` 为 `launch-state-engine`），否则 CLI 直接报错退出，不会读取或写入任何数据。`status` 和 `cases` 的输出里有 `lseRoot` 字段，显示实际使用的仓库。
+在 LSE 仓库根目录中，也可以用 `npm run launch-state -- status`。
 
-`case-create`、`context-set`、`submit` 的文件参数如果是相对路径，按当前工作目录解析。
+指定的目录必须是 LSE 仓库根目录（`package.json` 的 `name` 为 `launch-state-engine`），否则 CLI 直接报错退出，不会读取或写入任何数据。`status` 和 `cases` 的输出中有 `lseRoot` 字段，显示实际使用的仓库。`case-create`、`context-set`、`submit` 的文件参数如果是相对路径，按当前工作目录解析，Agent 可以直接引用产品仓库中的文件。
 
-以下示例用 `lse` 代表上面任意一种调用方式。
+### Agent 的工作流程
 
-### Agent 首次接入
+以下用 `lse` 代表上面任意一种调用方式。
 
-1. **创建 Launch Case**：复制 [`examples/product-context.json`](examples/product-context.json)，填写 `productId`、`name` 和已知事实，不确定的保留 `"unknown"`。字段和可选值见 [Product Context](docs/PRODUCT-CONTEXT.md)。
+1. **创建 Launch Case**：复制 [`examples/product-context.json`](examples/product-context.json)，填写 `productId`、`name` 和已知事实。字段和可选值见 [Product Context](docs/PRODUCT-CONTEXT.md)。
 
    ```bash
    lse case-create my-product.json
    ```
 
-   如果用户已在 Dashboard 中添加过产品，跳过这一步，用 `lse cases` 查看，用 `lse case-switch <caseId>` 切换。
+   如果你已经在 Dashboard 中添加过产品，跳过这一步：用 `lse cases` 查看，用 `lse case-switch <caseId>` 切换。
 
-2. **读取当前状态和 Next Action**：
+2. **读取状态和下一步**：
 
    ```bash
    lse status
    lse next
-   lse parallel        # 当前可以同时开始的工作
-   lse node <nodeId>   # 节点要求、依赖和完成标准
+   lse parallel        # 现在可以同时开始的工作
+   lse node <nodeId>   # 某一步的要求、依赖和完成标准
    ```
 
-3. **遇到产品决策，交还给用户**：`next` 返回 `kind: "product_decision"`，或 `undetermined` 列出的问题，都标有 `owner: "user"` 和 `policy: "stop_and_ask"`。Agent 必须询问用户，不能替用户决定，也不能把 unknown 改成 false。用户回答后，更新事实并重新读取：
+3. **遇到产品决策，交还给你**：`next` 返回 `kind: "product_decision"`，或 `undetermined` 列出的问题，都带有 `owner: "user"` 和 `policy: "stop_and_ask"`。Agent 应当询问你。你回答后，Agent 更新事实并重新读取：
 
    ```bash
    lse undetermined
-   lse context-set my-product.json   # 只能更新当前 case 的同一个 productId
+   lse context-set my-product.json   # 只能更新当前产品（相同 productId）
    lse next
    ```
 
-4. **提交进度和证据**：
+4. **提交进度、证据和阻塞**：
 
    ```bash
    lse propose-status <nodeId> waiting "已开始迁移核心功能"
    lse propose-evidence <nodeId> <type> <label> <value>
    lse propose-blocker <nodeId> <summary> <diagnosis> <resolution>
-   lse submit payload.json   # 一次提交多个节点，格式见 help
+   lse submit payload.json   # 一次提交多个步骤，格式见 lse help
    ```
 
-   `propose-status` 的第三个参数 reason 可选，会作为一条 `agent_submitted` evidence 记录在同一节点上。
+   `propose-status` 的第三个参数（原因）可选，会作为一条证据记录在同一步骤上。
 
-5. **交给用户确认完成**：Agent 不能写入 `completed`。节点满足完成标准后，请用户在 Dashboard 中核对 evidence 并确认。Dashboard 在窗口重新获得焦点时重新读取数据，不会实时推送。
+5. **请你确认完成**：步骤满足完成标准后，Agent 应请你在 Dashboard 中核对证据并确认。Dashboard 在窗口重新获得焦点时重新读取数据，不会实时推送。
 
-运行 `lse help` 查看完整命令。
+完整命令见 `lse help`。
 
-权限边界：
+## 人类与 Agent 的协作边界
 
-- 人类可以在 Dashboard 中确认节点 `completed`；
-- Agent 只能提议 `not_started`、`waiting` 或 `blocked`，并提交 blocker/evidence；
-- Agent evidence 会标记为 `agent_submitted`，不等于已验证完成；
-- 遇到产品决策时，Agent 必须把决定权交还给用户；
-- LSE 自己的 test/build 结果不会完成用户项目的上线节点。
+| | 你（Dashboard） | Agent（命令行） |
+|---|---|---|
+| 把步骤标记为「已完成」 | 可以 | 不可以 |
+| 提议「未开始 / 进行中 / 已阻塞」 | 可以 | 可以 |
+| 提交证据和阻塞 | — | 可以，证据标记为「开发 Agent 提交（未经验证）」 |
+| 回答产品决策问题 | 可以 | 不可以，应当询问你 |
+| 创建、切换产品，更新产品事实 | 可以 | 可以（`case-create`、`case-switch`、`context-set`） |
+| 清空当前产品的步骤状态 | 可以（会先确认） | 可以（`reset`，不会确认） |
+| 删除产品 | 可以（会二次确认） | 命令行没有删除命令 |
 
-这是接口契约，不是系统安全边界。本地 JSON 和开发服务器 API 没有认证，请只在可信设备和可信本地网络环境中运行。
+需要特别说明的几点：
 
-## 本地数据与备份
+- `reset` 会清空当前产品的全部步骤状态和证据，**包括你已确认的完成**。上面的 Agent 指令要求它不经你同意不得运行。
+- 你确认的状态优先于 Agent 的提议：Agent 后来提交的状态不会覆盖你的确认。
+- LSE 不会运行或检查你的小程序工程。LSE 自己的测试和构建结果，不会让你的任何上线步骤变成完成。
+- 以上是接口约定，不是安全边界。数据是本机上的普通 JSON 文件，开发服务器的接口没有认证。能直接修改文件或调用接口的程序可以绕过这些约定。请只在可信设备上运行。
 
-运行时数据位于：
+## 数据存储、备份与隐私
+
+所有数据保存在 LSE 仓库中：
 
 ```text
-public/flows/launch-state.json
-public/flows/launch-cases/<caseId>.json
+public/flows/launch-state.json              当前选中的产品
+public/flows/launch-cases/<caseId>.json     每个产品的完整记录
 ```
 
-`public/flows/` 已被 Git 忽略，不会进入正常提交；`npm run build` 也会把它从构建产物中排除。它包含 Product Context、状态、阻塞和 evidence，应按用户数据处理。
+- 数据包含产品信息、步骤状态、阻塞和证据，请按用户数据对待。
+- `public/flows/` 已被 Git 忽略，`npm run build` 也会把它排除在构建产物之外。
+- LSE 不需要账号，没有云同步，也不调用任何模型 API。Dashboard 页面只请求本机开发服务器的接口，命令行只读写本地文件；步骤详情中的官方文档链接在你点击时才会打开。
+- 不要把真实的 case 文件贴到公开 issue、日志或 Git 仓库中。
 
 备份与恢复：
 
-- **完整备份**：复制 `public/flows/launch-cases/<caseId>.json`。这个文件包含该产品的 Product Context、步骤状态、阻塞和证据。
-- **完整恢复**：把备份文件放回 `public/flows/launch-cases/`，然后在 Dashboard 产品选择器中切换到该产品，或运行 `launch-state case-switch <caseId>`。
-- **Dashboard「导出」**：适合审查或留存记录，但不能用于恢复进度。「导入」只恢复 Product Context。
+- **完整备份**：复制 `public/flows/launch-cases/<caseId>.json`。
+- **完整恢复**：把备份文件放回 `public/flows/launch-cases/`，然后在 Dashboard 中切换到该产品，或运行 `lse case-switch <caseId>`。
+- **Dashboard 的「导出」不能用于恢复进度**，「导入」只恢复产品信息。
 
-删除产品不可在 LSE 内撤销；需要保留进度时，先复制 case 文件，再删除。不要把真实 Launch Case 文件复制到公开 issue、日志或 Git 仓库。
+## 当前支持范围与规则覆盖
 
-## 规则覆盖范围
+V0.1 只支持微信小程序这一个上线目标，规则覆盖等级为 **partial（部分覆盖）**：
 
-V0.1 的覆盖等级是 **partial**：主要覆盖通用微信小程序上线流程，以及登录、云端数据、隐私、提醒、文件/图片、剪切板、位置、UGC 和虚拟支付等有限的已核验条件路径。
+- **已覆盖**：通用的微信小程序上线流程，以及登录、云端数据、隐私、订阅消息、文件 / 图片、剪切板、位置、UGC 和虚拟支付等条件路径。这些规则人工整理自微信官方文档，规则重点验证过工具 / 效率类产品。
+- **尚未完整覆盖**：普通小程序支付、实物订单与履约、广告、抽佣、捐赠，以及游戏、电商、教育、内容等类型产品的专项要求。
+- **没有生成的步骤，不代表没有要求。**
+- 产品信息中的「产品形态」只是 LSE 内部的分类，不是微信官方服务类目。正式类目和主体资质，请在微信公众平台按实际业务核验。
+- 规则不会自动从微信官方同步更新。每条规则记录了最后核验日期。
 
-以下领域尚未形成完整专项规则：普通小程序支付、实物订单与履约、广告、抽佣、捐赠，以及游戏、电商、教育、内容等产品类型的全部专项要求。未生成节点不代表没有要求。
+完整边界见 [Coverage Matrix](docs/COVERAGE-MATRIX.md)，规则来源和维护方式见 [Rule Registry](docs/RULE-REGISTRY.md)。
 
-Product Context 中的“产品形态”只是 LSE 内部的解释与覆盖提示，不是微信官方服务类目。正式类目和主体资质必须在微信后台按实际业务核验。
+V0.1 是单用户、本地运行的版本，不包含账号系统、云同步、团队协作、微信后台连接、规则自动抓取、Agent 编排或自动发布。
 
-完整边界见 [Coverage Matrix](docs/COVERAGE-MATRIX.md)。规则来源和维护方式见 [Rule Registry](docs/RULE-REGISTRY.md)。
+## 开发者文档与测试
 
-## 开发与验证
+| 文档 | 内容 |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | 整体结构、写入通道与验证语义 |
+| [State Model](docs/STATE-MODEL.md) | Flow、节点、Launch Truth 与状态定义 |
+| [Product Context](docs/PRODUCT-CONTEXT.md) | 字段、可选值，以及哪些 unknown 会生成问题 |
+| [Rule Registry](docs/RULE-REGISTRY.md) | 规则来源、结构与维护方式 |
+| [Coverage Matrix](docs/COVERAGE-MATRIX.md) | 已验证、部分覆盖与未验证的领域 |
+| [Research](docs/RESEARCH.md) | 生态调研与复用决策 |
 
 ```bash
-npm test
-npm run fixtures
+npm test            # 回归测试
+npm run fixtures    # 用虚构示例产品编译清单
 npm run typecheck
 npm run lint
 npm run build
 ```
+
+目前在 macOS + Node.js 25 上验证过全新安装与上述全部检查，全新安装（`npm ci`）另在 npm 10 和 11 上验证过。Windows、Linux 和 Node.js 22 尚未实测。
 
 主要目录：
 
 ```text
 app/                 Dashboard
 build/               本地 Launch Truth API 插件与构建入口
-components/ui/       UI primitives
-docs/                架构、状态模型、Product Context、规则和研究文档
+components/ui/       UI 组件
+docs/                文档与截图
 examples/            Product Context 模板
-lib/flow-engine/     Rule Registry、节点目录和 Flow compiler
+lib/flow-engine/     Rule Registry、节点目录和清单编译
 lib/launch-store*    本地状态读写与隔离
-scripts/             CLI 与 fixture runner
+scripts/             命令行与 fixture runner
 tests/               回归测试
 ```
 
-V0.1 是 local-first、单用户版本，不包含账号系统、云同步、团队协作、微信后台连接、规则自动抓取、Agent orchestration 或自动发布。
-
 ## License
 
-[MIT](LICENSE) © 2026 Nina Jia。
+[MIT](LICENSE) © 2026 Nina Jia
 
-仓库包含基于 shadcn/ui 的 UI primitives 和样式；对应 MIT 版权声明保留在 [`vendor/shadcn-tailwind-4.13.0.LICENSE.md`](vendor/shadcn-tailwind-4.13.0.LICENSE.md)。安装依赖各自受其上游许可证约束。
+仓库中基于 shadcn/ui 的 UI 组件和样式，其 MIT 版权声明保留在 [`vendor/shadcn-tailwind-4.13.0.LICENSE.md`](vendor/shadcn-tailwind-4.13.0.LICENSE.md)。安装的依赖各自受其上游许可证约束。
